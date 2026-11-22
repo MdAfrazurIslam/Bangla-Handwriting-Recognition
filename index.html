@@ -2,51 +2,320 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1">
 
-    <title>Bangla Handwriting Recognition</title>
+<title>Bangla Handwriting Recognition</title>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #101827;
-            color: white;
-            text-align: center;
-            padding: 30px 15px;
-        }
+<style>
+* {
+    box-sizing: border-box;
+}
 
-        h1 {
-            color: #38bdf8;
-        }
+body {
+    margin: 0;
+    padding: 20px 12px;
+    background: #101827;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
 
-        .box {
-            background: #1e293b;
-            padding: 25px;
-            border-radius: 15px;
-            max-width: 500px;
-            margin: 30px auto;
-        }
-    </style>
+h1 {
+    color: #38bdf8;
+}
+
+.container {
+    max-width: 600px;
+    margin: auto;
+}
+
+.card {
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 15px;
+    margin-top: 20px;
+}
+
+canvas {
+    width: 100%;
+    max-width: 360px;
+    height: auto;
+    background: white;
+    border-radius: 10px;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+button {
+    padding: 13px 16px;
+    margin: 5px;
+    border: none;
+    border-radius: 9px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.draw-button {
+    background: #16a34a;
+}
+
+.clear-button {
+    background: #dc2626;
+}
+
+.camera-button {
+    background: #2563eb;
+}
+
+.upload-button {
+    background: #475569;
+}
+
+.controls {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+#preview {
+    display: none;
+    max-width: 100%;
+    max-height: 350px;
+    margin: 15px auto;
+    border-radius: 8px;
+}
+
+#result {
+    color: #38bdf8;
+    font-size: 22px;
+}
+
+input[type="range"] {
+    width: 150px;
+}
+</style>
 </head>
 
 <body>
 
+<div class="container">
+
     <h1>বাংলা Handwriting Recognition</h1>
 
-    <div class="box">
-        <h2>Welcome to My AI Application</h2>
+    <p>
+        Draw, upload or take a photo of a
+        handwritten Bengali character.
+    </p>
+
+    <div class="card">
+
+        <h3>✍️ Drawing Pad</h3>
+
+        <canvas
+            id="drawingCanvas"
+            width="360"
+            height="360">
+        </canvas>
 
         <p>
-            Bengali Handwriting Recognition
-            using Convolutional Neural Networks.
+            Pen Size:
+            <input
+                type="range"
+                id="penSize"
+                min="3"
+                max="30"
+                value="12">
         </p>
 
-        <h1>অ আ ক খ গ ০ ১ ২</h1>
+        <div class="controls">
 
-        <p>App development in progress.</p>
+            <button class="draw-button"
+                    onclick="recognize()">
+                Recognize
+            </button>
+
+            <button class="clear-button"
+                    onclick="clearCanvas()">
+                Clear
+            </button>
+
+        </div>
+
     </div>
+
+    <div class="card">
+
+        <h3>📷 Camera / Image Upload</h3>
+
+        <input
+            type="file"
+            id="uploadInput"
+            accept="image/*"
+            hidden>
+
+        <input
+            type="file"
+            id="cameraInput"
+            accept="image/*"
+            capture="environment"
+            hidden>
+
+        <div class="controls">
+
+            <button class="upload-button"
+                onclick="document.getElementById('uploadInput').click()">
+                Upload Image
+            </button>
+
+            <button class="camera-button"
+                onclick="document.getElementById('cameraInput').click()">
+                Open Camera
+            </button>
+
+        </div>
+
+        <img id="preview" alt="Selected image">
+
+    </div>
+
+    <div class="card">
+
+        <h3>Recognition Result</h3>
+
+        <p id="result">
+            Draw or select a Bengali character.
+        </p>
+
+    </div>
+
+</div>
+
+<script>
+
+const canvas = document.getElementById("drawingCanvas");
+const ctx = canvas.getContext("2d");
+
+let drawing = false;
+let activeInput = "drawing";
+let currentImageUrl = null;
+
+// Initialize white drawing surface
+ctx.fillStyle = "white";
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+ctx.strokeStyle = "black";
+ctx.lineCap = "round";
+ctx.lineJoin = "round";
+
+function getPosition(event) {
+
+    const rect = canvas.getBoundingClientRect();
+
+    return {
+        x: (event.clientX - rect.left)
+            * canvas.width / rect.width,
+        y: (event.clientY - rect.top)
+            * canvas.height / rect.height
+    };
+}
+
+canvas.addEventListener("pointerdown", function(event) {
+
+    event.preventDefault();
+
+    drawing = true;
+    activeInput = "drawing";
+
+    document.getElementById("preview").style.display = "none";
+
+    canvas.setPointerCapture(event.pointerId);
+
+    const position = getPosition(event);
+
+    ctx.beginPath();
+    ctx.moveTo(position.x, position.y);
+
+    ctx.lineWidth = document.getElementById("penSize").value;
+
+    ctx.lineTo(position.x + 0.01, position.y + 0.01);
+    ctx.stroke();
+
+});
+
+canvas.addEventListener("pointermove", function(event) {
+
+    if (!drawing) return;
+
+    event.preventDefault();
+
+    const position = getPosition(event);
+
+    ctx.lineTo(position.x, position.y);
+    ctx.stroke();
+
+});
+
+function stopDrawing() {
+    drawing = false;
+}
+
+canvas.addEventListener("pointerup", stopDrawing);
+canvas.addEventListener("pointercancel", stopDrawing);
+
+function clearCanvas() {
+
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    activeInput = "drawing";
+
+    document.getElementById("preview").style.display = "none";
+
+    document.getElementById("result").textContent =
+        "Draw or select a Bengali character.";
+}
+
+function showImage(event) {
+
+    const file = event.target.files[0];
+
+    if (!file) return;
+
+    if (currentImageUrl) {
+        URL.revokeObjectURL(currentImageUrl);
+    }
+
+    currentImageUrl = URL.createObjectURL(file);
+
+    const preview = document.getElementById("preview");
+
+    preview.src = currentImageUrl;
+    preview.style.display = "block";
+
+    activeInput = "photo";
+
+    document.getElementById("result").textContent =
+        "Image selected successfully.";
+}
+
+document.getElementById("uploadInput")
+    .addEventListener("change", showImage);
+
+document.getElementById("cameraInput")
+    .addEventListener("change", showImage);
+
+function recognize() {
+
+    document.getElementById("result").textContent =
+        "Drawing and image inputs are ready. " +
+        "CNN recognition will be connected in the next step.";
+
+}
+
+</script>
 
 </body>
 </html>
