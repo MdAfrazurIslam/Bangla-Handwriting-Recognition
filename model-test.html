@@ -1,0 +1,115 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1">
+
+    <title>Bangla CNN Model Test</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
+</head>
+
+<body style="
+    background:#101827;
+    color:white;
+    font-family:Arial;
+    text-align:center;
+    padding:30px;
+">
+
+    <h2>বাংলা CNN Model Test</h2>
+
+    <p id="status">Loading CNN model...</p>
+
+    <script>
+        async function testModel() {
+
+            const status = document.getElementById("status");
+
+            try {
+
+                if (!window.tf || !window.tflite) {
+                    throw new Error(
+                        "TensorFlow JavaScript libraries did not load."
+                    );
+                }
+
+                // Load Bengali character labels
+                const response = await fetch(
+                    "./bangla_labels_60.json"
+                );
+
+                if (!response.ok) {
+                    throw new Error("Cannot load Bengali labels.");
+                }
+
+                const labels = await response.json();
+
+                if (labels.length !== 60) {
+                    throw new Error("Expected 60 character labels.");
+                }
+
+                status.textContent =
+                    "Labels loaded. Loading CNN model...";
+
+                // Configure TensorFlow Lite WASM runtime
+                tflite.setWasmPath(
+                    "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/"
+                );
+
+                // Load trained CNN
+                const model = await tflite.loadTFLiteModel(
+                    "./bangla_60_web.tflite"
+                );
+
+                status.textContent =
+                    "CNN loaded. Testing prediction...";
+
+                // Create a dummy 64x64 test image
+                const input = tf.zeros([1, 64, 64, 1]);
+
+                // Run test inference
+                const prediction = model.predict(input);
+
+                const output = Array.isArray(prediction)
+                    ? prediction[0]
+                    : typeof prediction.data === "function"
+                        ? prediction
+                        : Object.values(prediction)[0];
+
+                const scores = await output.data();
+
+                if (scores.length !== 60) {
+                    throw new Error(
+                        "Expected 60 outputs, got " + scores.length
+                    );
+                }
+
+                input.dispose();
+                output.dispose();
+
+                status.innerHTML =
+                    "✅ CNN loaded successfully!<br><br>" +
+                    "Bengali labels: " + labels.length +
+                    "<br>Model output classes: " + scores.length +
+                    "<br>Input size: 64x64";
+
+            } catch (error) {
+
+                console.error(error);
+
+                status.textContent =
+                    "❌ Error: " + error.message;
+            }
+        }
+
+        testModel();
+    </script>
+
+</body>
+</html>
