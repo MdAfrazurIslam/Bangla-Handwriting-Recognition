@@ -1,0 +1,275 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>Bangla CNN Browser Test</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+
+<style>
+body {
+    background: #101827;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 30px 15px;
+}
+
+.card {
+    background: #1e293b;
+    padding: 25px;
+    border-radius: 15px;
+    max-width: 550px;
+    margin: 30px auto;
+}
+
+h1 {
+    color: #38bdf8;
+}
+
+#status {
+    font-size: 18px;
+}
+
+pre {
+    text-align: left;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h1>বাংলা CNN Browser Test</h1>
+
+<p id="status">Starting model test...</p>
+
+<pre id="details"></pre>
+
+</div>
+
+<script>
+
+async function testBrowserCNN() {
+
+    const status = document.getElementById("status");
+    const details = document.getElementById("details");
+
+    try {
+
+        if (!window.tf) {
+            throw new Error("TensorFlow.js did not load.");
+        }
+
+        status.textContent = "Loading CNN architecture...";
+
+        // Load layer definitions
+        const manifestResponse = await fetch(
+            "./browser_model/layers.json"
+        );
+
+        if (!manifestResponse.ok) {
+            throw new Error("Cannot load layers.json");
+        }
+
+        const manifest = await manifestResponse.json();
+
+        // Load trained CNN weights
+        status.textContent = "Loading trained CNN weights...";
+
+        const weightsResponse = await fetch(
+            "./browser_model/weights.bin"
+        );
+
+        if (!weightsResponse.ok) {
+            throw new Error("Cannot load weights.bin");
+        }
+
+        const binary = await weightsResponse.arrayBuffer();
+
+        // Load Bengali labels
+        const labelsResponse = await fetch(
+            "./bangla_labels_60.json"
+        );
+
+        if (!labelsResponse.ok) {
+            throw new Error("Cannot load Bengali labels");
+        }
+
+        const labels = await labelsResponse.json();
+
+        if (labels.length !== 60) {
+            throw new Error("Expected 60 Bengali labels.");
+        }
+
+        status.textContent = "Rebuilding CNN layers...";
+
+        const model = tf.sequential();
+
+        model.add(tf.layers.inputLayer({
+            inputShape: manifest.inputShape
+        }));
+
+        // Rebuild the original CNN architecture
+        for (const info of manifest.layers) {
+
+            const cfg = info.config;
+            let layer;
+
+            switch (info.type) {
+
+                case "Conv2D":
+                    layer = tf.layers.conv2d({
+                        filters: cfg.filters,
+                        kernelSize: cfg.kernelSize,
+                        strides: cfg.strides,
+                        padding: cfg.padding,
+                        activation: cfg.activation,
+                        useBias: cfg.useBias,
+                        dilationRate: cfg.dilationRate
+                    });
+                    break;
+
+                case "BatchNormalization":
+                    layer = tf.layers.batchNormalization({
+                        axis: cfg.axis,
+                        epsilon: cfg.epsilon,
+                        momentum: cfg.momentum,
+                        center: cfg.center,
+                        scale: cfg.scale
+                    });
+                    break;
+
+                case "MaxPooling2D":
+                    layer = tf.layers.maxPooling2d({
+                        poolSize: cfg.poolSize,
+                        strides: cfg.strides,
+                        padding: cfg.padding
+                    });
+                    break;
+
+                case "Flatten":
+                    layer = tf.layers.flatten();
+                    break;
+
+                case "Dense":
+                    layer = tf.layers.dense({
+                        units: cfg.units,
+                        activation: cfg.activation,
+                        useBias: cfg.useBias
+                    });
+                    break;
+
+                case "Dropout":
+                    layer = tf.layers.dropout({
+                        rate: cfg.rate
+                    });
+                    break;
+
+                default:
+                    throw new Error(
+                        "Unsupported layer: " + info.type
+                    );
+            }
+
+            model.add(layer);
+
+            // Restore trained layer weights
+            if (info.weights.length > 0) {
+
+                const tensors = [];
+
+                for (const spec of info.weights) {
+
+                    const values = new Float32Array(
+                        binary,
+                        spec.byteOffset,
+                        spec.length
+                    );
+
+                    tensors.push(
+                        tf.tensor(
+                            values,
+                            spec.shape,
+                            "float32"
+                        )
+                    );
+                }
+
+                layer.setWeights(tensors);
+
+                tensors.forEach(tensor => tensor.dispose());
+            }
+        }
+
+        status.textContent = "Running test prediction...";
+
+        // Verify output on a blank image
+        const input = tf.zeros([1, 64, 64, 1]);
+
+        const output = model.predict(input);
+
+        const scores = await output.data();
+
+        if (scores.length !== 60) {
+            throw new Error(
+                "Expected 60 outputs, got " + scores.length
+            );
+        }
+
+        if (!Array.from(scores).every(Number.isFinite)) {
+            throw new Error("Model produced invalid values.");
+        }
+
+        const total = Array.from(scores).reduce(
+            (sum, value) => sum + value, 0
+        );
+
+        if (Math.abs(total - 1) > 0.01) {
+            throw new Error(
+                "Output probabilities do not sum to 1."
+            );
+        }
+
+        input.dispose();
+        output.dispose();
+
+        status.textContent =
+            "✅ Browser CNN test passed!";
+
+        details.textContent =
+            "CNN layers: " + manifest.layers.length +
+            "\nBengali labels: " + labels.length +
+            "\nOutput classes: " + scores.length +
+            "\nInput: 64 x 64 x 1" +
+            "\nWeight file: " +
+            (binary.byteLength / 1024 / 1024).toFixed(2) +
+            " MB" +
+            "\nProbability total: " + total.toFixed(5);
+
+        console.log("Model reconstructed:", model.summary());
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.textContent = "❌ Model test failed";
+
+        details.textContent = error.message;
+    }
+}
+
+testBrowserCNN();
+
+</script>
+
+</body>
+</html>
