@@ -1,0 +1,370 @@
+{
+  "inputShape": [
+    64,
+    64,
+    1
+  ],
+  "outputClasses": 60,
+  "layers": [
+    {
+      "type": "Conv2D",
+      "name": "conv2d_3",
+      "config": {
+        "filters": 32,
+        "kernelSize": [
+          3,
+          3
+        ],
+        "strides": [
+          1,
+          1
+        ],
+        "padding": "same",
+        "activation": "relu",
+        "useBias": true,
+        "dilationRate": [
+          1,
+          1
+        ]
+      },
+      "weights": [
+        {
+          "shape": [
+            3,
+            3,
+            1,
+            32
+          ],
+          "byteOffset": 0,
+          "length": 288
+        },
+        {
+          "shape": [
+            32
+          ],
+          "byteOffset": 1152,
+          "length": 32
+        }
+      ]
+    },
+    {
+      "type": "BatchNormalization",
+      "name": "batch_normalization_3",
+      "config": {
+        "axis": -1,
+        "epsilon": 0.001,
+        "momentum": 0.99,
+        "center": true,
+        "scale": true
+      },
+      "weights": [
+        {
+          "shape": [
+            32
+          ],
+          "byteOffset": 1280,
+          "length": 32
+        },
+        {
+          "shape": [
+            32
+          ],
+          "byteOffset": 1408,
+          "length": 32
+        },
+        {
+          "shape": [
+            32
+          ],
+          "byteOffset": 1536,
+          "length": 32
+        },
+        {
+          "shape": [
+            32
+          ],
+          "byteOffset": 1664,
+          "length": 32
+        }
+      ]
+    },
+    {
+      "type": "MaxPooling2D",
+      "name": "max_pooling2d_3",
+      "config": {
+        "poolSize": [
+          2,
+          2
+        ],
+        "strides": [
+          2,
+          2
+        ],
+        "padding": "valid"
+      },
+      "weights": []
+    },
+    {
+      "type": "Conv2D",
+      "name": "conv2d_4",
+      "config": {
+        "filters": 64,
+        "kernelSize": [
+          3,
+          3
+        ],
+        "strides": [
+          1,
+          1
+        ],
+        "padding": "same",
+        "activation": "relu",
+        "useBias": true,
+        "dilationRate": [
+          1,
+          1
+        ]
+      },
+      "weights": [
+        {
+          "shape": [
+            3,
+            3,
+            32,
+            64
+          ],
+          "byteOffset": 1792,
+          "length": 18432
+        },
+        {
+          "shape": [
+            64
+          ],
+          "byteOffset": 75520,
+          "length": 64
+        }
+      ]
+    },
+    {
+      "type": "BatchNormalization",
+      "name": "batch_normalization_4",
+      "config": {
+        "axis": -1,
+        "epsilon": 0.001,
+        "momentum": 0.99,
+        "center": true,
+        "scale": true
+      },
+      "weights": [
+        {
+          "shape": [
+            64
+          ],
+          "byteOffset": 75776,
+          "length": 64
+        },
+        {
+          "shape": [
+            64
+          ],
+          "byteOffset": 76032,
+          "length": 64
+        },
+        {
+          "shape": [
+            64
+          ],
+          "byteOffset": 76288,
+          "length": 64
+        },
+        {
+          "shape": [
+            64
+          ],
+          "byteOffset": 76544,
+          "length": 64
+        }
+      ]
+    },
+    {
+      "type": "MaxPooling2D",
+      "name": "max_pooling2d_4",
+      "config": {
+        "poolSize": [
+          2,
+          2
+        ],
+        "strides": [
+          2,
+          2
+        ],
+        "padding": "valid"
+      },
+      "weights": []
+    },
+    {
+      "type": "Conv2D",
+      "name": "conv2d_5",
+      "config": {
+        "filters": 128,
+        "kernelSize": [
+          3,
+          3
+        ],
+        "strides": [
+          1,
+          1
+        ],
+        "padding": "same",
+        "activation": "relu",
+        "useBias": true,
+        "dilationRate": [
+          1,
+          1
+        ]
+      },
+      "weights": [
+        {
+          "shape": [
+            3,
+            3,
+            64,
+            128
+          ],
+          "byteOffset": 76800,
+          "length": 73728
+        },
+        {
+          "shape": [
+            128
+          ],
+          "byteOffset": 371712,
+          "length": 128
+        }
+      ]
+    },
+    {
+      "type": "BatchNormalization",
+      "name": "batch_normalization_5",
+      "config": {
+        "axis": -1,
+        "epsilon": 0.001,
+        "momentum": 0.99,
+        "center": true,
+        "scale": true
+      },
+      "weights": [
+        {
+          "shape": [
+            128
+          ],
+          "byteOffset": 372224,
+          "length": 128
+        },
+        {
+          "shape": [
+            128
+          ],
+          "byteOffset": 372736,
+          "length": 128
+        },
+        {
+          "shape": [
+            128
+          ],
+          "byteOffset": 373248,
+          "length": 128
+        },
+        {
+          "shape": [
+            128
+          ],
+          "byteOffset": 373760,
+          "length": 128
+        }
+      ]
+    },
+    {
+      "type": "MaxPooling2D",
+      "name": "max_pooling2d_5",
+      "config": {
+        "poolSize": [
+          2,
+          2
+        ],
+        "strides": [
+          2,
+          2
+        ],
+        "padding": "valid"
+      },
+      "weights": []
+    },
+    {
+      "type": "Flatten",
+      "name": "flatten_1",
+      "config": {},
+      "weights": []
+    },
+    {
+      "type": "Dense",
+      "name": "dense_2",
+      "config": {
+        "units": 128,
+        "activation": "relu",
+        "useBias": true
+      },
+      "weights": [
+        {
+          "shape": [
+            8192,
+            128
+          ],
+          "byteOffset": 374272,
+          "length": 1048576
+        },
+        {
+          "shape": [
+            128
+          ],
+          "byteOffset": 4568576,
+          "length": 128
+        }
+      ]
+    },
+    {
+      "type": "Dropout",
+      "name": "dropout_1",
+      "config": {
+        "rate": 0.35
+      },
+      "weights": []
+    },
+    {
+      "type": "Dense",
+      "name": "dense_3",
+      "config": {
+        "units": 60,
+        "activation": "softmax",
+        "useBias": true
+      },
+      "weights": [
+        {
+          "shape": [
+            128,
+            60
+          ],
+          "byteOffset": 4569088,
+          "length": 7680
+        },
+        {
+          "shape": [
+            60
+          ],
+          "byteOffset": 4599808,
+          "length": 60
+        }
+      ]
+    }
+  ]
+}
