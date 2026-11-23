@@ -5,15 +5,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport"
-      content="width=device-width, initial-scale=1">
+      content="width=device-width, initial-scale=1.0">
 
 <title>Bangla Handwriting Recognition</title>
 
-<!-- TensorFlow.js Library -->
+<!-- TensorFlow.js -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
 
-<!-- Your Trained Bengali CNN Loader -->
+<!-- Trained Bengali CNN -->
 <script src="./cnn-loader.js"></script>
+
+<!-- Photo Preprocessing -->
+<script src="./photo-preprocess.js"></script>
 
 <style>
 
@@ -158,6 +161,11 @@ input[type="range"] {
 .small-note {
     color: #cbd5e1;
     font-size: 13px;
+    line-height: 1.5;
+}
+
+#photoRecognizeButton {
+    display: none;
 }
 
 </style>
@@ -201,8 +209,8 @@ input[type="range"] {
             <button
                 class="draw-button"
                 id="recognizeButton"
-                onclick="recognize()">
-                Recognize
+                onclick="recognizeDrawing()">
+                Recognize Drawing
             </button>
 
             <button
@@ -258,9 +266,20 @@ input[type="range"] {
             id="preview"
             alt="Selected handwritten Bengali character">
 
+        <div class="controls">
+
+            <button
+                class="draw-button"
+                id="photoRecognizeButton"
+                onclick="recognizePhoto()">
+                Recognize Photo
+            </button>
+
+        </div>
+
         <p class="small-note">
-            Camera and image upload preview are ready.
-            Photo recognition will be connected next.
+            Upload or photograph one handwritten
+            Bengali character on light-colored paper.
         </p>
 
     </div>
@@ -272,7 +291,8 @@ input[type="range"] {
         <h3>🧠 Recognition Result</h3>
 
         <p id="result">
-            Draw a Bengali character and click Recognize.
+            Draw or upload a Bengali character
+            to begin recognition.
         </p>
 
         <div id="topPredictions"></div>
@@ -287,17 +307,21 @@ input[type="range"] {
                 height="64">
             </canvas>
 
+            <p class="small-note">
+                This is the processed image
+                received by your trained CNN.
+            </p>
+
         </div>
 
     </div>
 
 </div>
 
-
 <script>
 
 // ========================================
-// STEP 1: INITIALIZE DRAWING PAD
+// STEP 1: INITIALIZE APPLICATION
 // ========================================
 
 const canvas =
@@ -317,13 +341,28 @@ const processedCanvas =
 const processedCtx =
     processedCanvas.getContext("2d");
 
+const preview =
+    document.getElementById("preview");
+
+const processedSection =
+    document.getElementById("processedSection");
+
+const recognizeButton =
+    document.getElementById("recognizeButton");
+
+const photoRecognizeButton =
+    document.getElementById("photoRecognizeButton");
+
 let drawing = false;
 let activeInput = "drawing";
 let currentImageUrl = null;
 let isRecognizing = false;
 let hasDrawing = false;
+let inputVersion = 0;
 
-// White drawing background
+
+// Initialize white drawing background
+
 ctx.fillStyle = "white";
 
 ctx.fillRect(
@@ -333,14 +372,13 @@ ctx.fillRect(
     canvas.height
 );
 
-// Black pen
 ctx.strokeStyle = "black";
 ctx.lineCap = "round";
 ctx.lineJoin = "round";
 
 
 // ========================================
-// STEP 2: MOUSE AND TOUCH POSITION
+// STEP 2: GET DRAWING POSITION
 // ========================================
 
 function getPosition(event) {
@@ -373,11 +411,13 @@ canvas.addEventListener(
         drawing = true;
         hasDrawing = true;
         activeInput = "drawing";
+        inputVersion++;
 
-        document.getElementById("preview")
-            .style.display = "none";
+        preview.style.display = "none";
 
-        canvas.setPointerCapture(event.pointerId);
+        if (canvas.setPointerCapture) {
+            canvas.setPointerCapture(event.pointerId);
+        }
 
         const position = getPosition(event);
 
@@ -390,12 +430,10 @@ canvas.addEventListener(
 
         ctx.strokeStyle = "black";
 
-        ctx.lineWidth =
-            Number(
-                document.getElementById("penSize").value
-            );
+        ctx.lineWidth = Number(
+            document.getElementById("penSize").value
+        );
 
-        // Draw even for a single touch
         ctx.lineTo(
             position.x + 0.01,
             position.y + 0.01
@@ -437,9 +475,7 @@ canvas.addEventListener(
 // ========================================
 
 function stopDrawing() {
-
     drawing = false;
-
 }
 
 canvas.addEventListener(
@@ -462,6 +498,7 @@ function clearCanvas() {
     drawing = false;
     hasDrawing = false;
     activeInput = "drawing";
+    inputVersion++;
 
     ctx.fillStyle = "white";
 
@@ -472,24 +509,33 @@ function clearCanvas() {
         canvas.height
     );
 
-    document.getElementById("preview")
-        .style.display = "none";
+    preview.style.display = "none";
+    preview.removeAttribute("src");
 
-    document.getElementById("processedSection")
-        .style.display = "none";
+    if (currentImageUrl) {
+
+        URL.revokeObjectURL(currentImageUrl);
+        currentImageUrl = null;
+
+    }
+
+    photoRecognizeButton.style.display = "none";
+
+    processedSection.style.display = "none";
 
     topPredictionsElement.innerHTML = "";
 
     resultElement.textContent =
-        "Draw a Bengali character and click Recognize.";
+        "Draw or upload a Bengali character.";
 
     document.getElementById("uploadInput").value = "";
     document.getElementById("cameraInput").value = "";
+
 }
 
 
 // ========================================
-// STEP 7: UPLOAD OR CAMERA PREVIEW
+// STEP 7: IMAGE UPLOAD AND CAMERA INPUT
 // ========================================
 
 function showImage(event) {
@@ -498,50 +544,50 @@ function showImage(event) {
 
     if (!file) return;
 
+    if (!file.type.startsWith("image/")) {
+
+        resultElement.textContent =
+            "Please select a valid image file.";
+
+        return;
+    }
+
     if (currentImageUrl) {
-
         URL.revokeObjectURL(currentImageUrl);
-
     }
 
     currentImageUrl =
         URL.createObjectURL(file);
-
-    const preview =
-        document.getElementById("preview");
 
     preview.src = currentImageUrl;
 
     preview.style.display = "block";
 
     activeInput = "photo";
+    inputVersion++;
+
+    photoRecognizeButton.style.display =
+        "inline-block";
 
     topPredictionsElement.innerHTML = "";
 
-    document.getElementById("processedSection")
-        .style.display = "none";
+    processedSection.style.display = "none";
 
     resultElement.textContent =
-        "Image selected successfully. " +
-        "Photo recognition will be connected next.";
+        "Image selected successfully.\n" +
+        "Click Recognize Photo to identify the character.";
 
 }
 
 document.getElementById("uploadInput")
-    .addEventListener(
-        "change",
-        showImage
-    );
+    .addEventListener("change", showImage);
 
 document.getElementById("cameraInput")
-    .addEventListener(
-        "change",
-        showImage
-    );
+    .addEventListener("change", showImage);
 
 
 // ========================================
-// STEP 8: PREPROCESS HANDWRITTEN DRAWING
+// STEP 8: PREPROCESS DRAWING
 // ========================================
 
 function drawingToPixels() {
@@ -550,34 +596,27 @@ function drawingToPixels() {
     const height = canvas.height;
 
     const image = ctx.getImageData(
-        0,
-        0,
-        width,
-        height
+        0, 0, width, height
     );
 
     const data = image.data;
 
     let minX = width;
     let minY = height;
-
     let maxX = -1;
     let maxY = -1;
 
-    // Locate dark character pixels
     for (let y = 0; y < height; y++) {
 
         for (let x = 0; x < width; x++) {
 
-            const index =
-                (y * width + x) * 4;
+            const index = (y * width + x) * 4;
 
-            const gray =
-                (
-                    data[index] +
-                    data[index + 1] +
-                    data[index + 2]
-                ) / 3;
+            const gray = (
+                data[index] +
+                data[index + 1] +
+                data[index + 2]
+            ) / 3;
 
             if (gray < 200) {
 
@@ -586,7 +625,6 @@ function drawingToPixels() {
 
                 maxX = Math.max(maxX, x);
                 maxY = Math.max(maxY, y);
-
             }
         }
     }
@@ -596,16 +634,11 @@ function drawingToPixels() {
         throw new Error(
             "Please draw a Bengali character first."
         );
-
     }
 
-    const cropWidth =
-        maxX - minX + 1;
+    const cropWidth = maxX - minX + 1;
+    const cropHeight = maxY - minY + 1;
 
-    const cropHeight =
-        maxY - minY + 1;
-
-    // Prepare 64x64 canvas
     const tempCanvas =
         document.createElement("canvas");
 
@@ -617,41 +650,27 @@ function drawingToPixels() {
 
     tempCtx.fillStyle = "white";
 
-    tempCtx.fillRect(
-        0,
-        0,
-        64,
-        64
-    );
+    tempCtx.fillRect(0, 0, 64, 64);
 
-    // Resize while preserving proportions
     const scale = Math.min(
         52 / cropWidth,
         52 / cropHeight
     );
 
-    const newWidth =
-        cropWidth * scale;
+    const newWidth = cropWidth * scale;
+    const newHeight = cropHeight * scale;
 
-    const newHeight =
-        cropHeight * scale;
-
-    const offsetX =
-        (64 - newWidth) / 2;
-
-    const offsetY =
-        (64 - newHeight) / 2;
+    const offsetX = (64 - newWidth) / 2;
+    const offsetY = (64 - newHeight) / 2;
 
     tempCtx.imageSmoothingEnabled = true;
 
     tempCtx.drawImage(
         canvas,
-
         minX,
         minY,
         cropWidth,
         cropHeight,
-
         offsetX,
         offsetY,
         newWidth,
@@ -660,65 +679,75 @@ function drawingToPixels() {
 
     const processedData =
         tempCtx.getImageData(
-            0,
-            0,
-            64,
-            64
+            0, 0, 64, 64
         ).data;
 
     const pixels =
         new Float32Array(4096);
 
-    // Invert black on white to white on black
     for (let i = 0; i < 4096; i++) {
 
         const index = i * 4;
 
-        const gray =
-            (
-                processedData[index] +
-                processedData[index + 1] +
-                processedData[index + 2]
-            ) / 3;
+        const gray = (
+            processedData[index] +
+            processedData[index + 1] +
+            processedData[index + 2]
+        ) / 3;
 
-        pixels[i] =
-            (255 - gray) / 255;
-
+        pixels[i] = (255 - gray) / 255;
     }
-
-    // Display exactly what the CNN receives
-    const previewData =
-        processedCtx.createImageData(64, 64);
-
-    for (let i = 0; i < 4096; i++) {
-
-        const value =
-            Math.round(pixels[i] * 255);
-
-        const index = i * 4;
-
-        previewData.data[index] = value;
-        previewData.data[index + 1] = value;
-        previewData.data[index + 2] = value;
-        previewData.data[index + 3] = 255;
-
-    }
-
-    processedCtx.putImageData(
-        previewData,
-        0,
-        0
-    );
-
-    document.getElementById("processedSection")
-        .style.display = "block";
 
     return pixels;
 }
 
 
 // ========================================
-// STEP 9: DISPLAY TOP 3 PREDICTIONS
+// STEP 9: SHOW PROCESSED 64x64 IMAGE
+// ========================================
+
+function displayProcessedImage(pixels) {
+
+    if (!pixels || pixels.length !== 4096) {
+
+        throw new Error(
+            "Invalid 64x64 CNN input."
+        );
+    }
+
+    const imageData =
+        processedCtx.createImageData(64, 64);
+
+    for (let i = 0; i < 4096; i++) {
+
+        const value = Math.round(
+            Math.max(
+                0,
+                Math.min(1, pixels[i])
+            ) * 255
+        );
+
+        const p = i * 4;
+
+        imageData.data[p] = value;
+        imageData.data[p + 1] = value;
+        imageData.data[p + 2] = value;
+        imageData.data[p + 3] = 255;
+
+    }
+
+    processedCtx.putImageData(
+        imageData,
+        0,
+        0
+    );
+
+    processedSection.style.display = "block";
+}
+
+
+// ========================================
+// STEP 10: DISPLAY TOP 3 PREDICTIONS
 // ========================================
 
 function displayTopPredictions(top3) {
@@ -777,7 +806,6 @@ function displayTopPredictions(top3) {
         row.appendChild(bar);
 
         box.appendChild(row);
-
     }
 
     topPredictionsElement.appendChild(box);
@@ -785,57 +813,205 @@ function displayTopPredictions(top3) {
 
 
 // ========================================
-// STEP 10: RUN CNN RECOGNITION
+// STEP 11: WAIT FOR PHOTO TO LOAD
 // ========================================
 
-async function recognize() {
+async function waitForPhoto() {
+
+    if (!preview.src) {
+
+        throw new Error(
+            "Please upload or take a photograph first."
+        );
+    }
+
+    if (typeof preview.decode === "function") {
+
+        await preview.decode();
+
+    } else if (!preview.complete) {
+
+        await new Promise((resolve, reject) => {
+
+            preview.addEventListener(
+                "load",
+                resolve,
+                { once: true }
+            );
+
+            preview.addEventListener(
+                "error",
+                () => reject(
+                    new Error("Failed to load photograph.")
+                ),
+                { once: true }
+            );
+        });
+    }
+
+    if (!preview.naturalWidth ||
+        !preview.naturalHeight) {
+
+        throw new Error(
+            "Cannot read the selected photograph."
+        );
+    }
+}
+
+
+// ========================================
+// STEP 12: RECOGNIZE DRAWING
+// ========================================
+
+async function recognizeDrawing() {
+
+    activeInput = "drawing";
+
+    await recognize("drawing");
+}
+
+
+// ========================================
+// STEP 13: RECOGNIZE PHOTO
+// ========================================
+
+async function recognizePhoto() {
+
+    if (!currentImageUrl) {
+
+        resultElement.textContent =
+            "Please select an image first.";
+
+        return;
+    }
+
+    activeInput = "photo";
+
+    await recognize("photo");
+}
+
+
+// ========================================
+// STEP 14: RUN CNN RECOGNITION
+// ========================================
+
+async function recognize(inputType) {
 
     if (isRecognizing) return;
 
-    if (activeInput !== "drawing") {
+    if (inputType === "drawing" && !hasDrawing) {
 
         resultElement.textContent =
-            "Photo recognition will be connected next. " +
-            "Please use the drawing pad for now.";
+            "Please draw a Bengali character first.";
 
         return;
-
     }
 
-    if (!hasDrawing) {
+    if (inputType === "photo" && !currentImageUrl) {
 
         resultElement.textContent =
-            "Please draw a Bengali letter or number first.";
+            "Please upload or take a photo first.";
 
         return;
-
     }
 
-    const recognizeButton =
-        document.getElementById("recognizeButton");
+    const currentVersion = inputVersion;
 
     isRecognizing = true;
-    recognizeButton.disabled = true;
 
-    resultElement.textContent =
-        "Loading CNN and recognizing...";
+    recognizeButton.disabled = true;
+    photoRecognizeButton.disabled = true;
 
     topPredictionsElement.innerHTML = "";
 
+    processedSection.style.display = "none";
+
+    resultElement.textContent =
+        "Processing image...";
+
     try {
 
-        // Convert drawing to CNN input
-        const pixels = drawingToPixels();
+        let pixels;
 
-        // Load CNN and predict character
+        // OPTION 1: Drawing pad
+
+        if (inputType === "drawing") {
+
+            pixels = drawingToPixels();
+
+        }
+
+        // OPTION 2: Upload or camera
+
+        else if (inputType === "photo") {
+
+            if (
+                !window.BanglaPhoto ||
+                typeof window.BanglaPhoto.process !== "function"
+            ) {
+
+                throw new Error(
+                    "Photo preprocessing library is missing."
+                );
+            }
+
+            await waitForPhoto();
+
+            if (inputVersion !== currentVersion) {
+
+                resultElement.textContent =
+                    "Image changed. Please recognize again.";
+
+                return;
+            }
+
+            const processed =
+                window.BanglaPhoto.process(preview);
+
+            pixels = processed.pixels;
+
+        }
+
+        else {
+
+            throw new Error(
+                "Unknown input type."
+            );
+        }
+
+        if (inputVersion !== currentVersion) {
+
+            resultElement.textContent =
+                "Input changed. Please recognize again.";
+
+            return;
+        }
+
+        // Display exact CNN input image
+
+        displayProcessedImage(pixels);
+
+        resultElement.textContent =
+            "CNN is recognizing the character...";
+
+        // Run the trained 60-class Bengali CNN
+
         const prediction =
             await window.BanglaCNN.predict(pixels);
 
-        const confidence =
-            (prediction.confidence * 100)
-                .toFixed(2);
+        if (inputVersion !== currentVersion) {
 
-        // Show result
+            resultElement.textContent =
+                "Input changed. Please recognize again.";
+
+            return;
+        }
+
+        const confidence =
+            (prediction.confidence * 100).toFixed(2);
+
+        // Main result
+
         resultElement.textContent =
             "Predicted Bengali Character: " +
             prediction.character +
@@ -846,7 +1022,8 @@ async function recognize() {
             "Model Score: " +
             confidence + "%";
 
-        // Show top three predictions
+        // Top three results
+
         displayTopPredictions(
             prediction.top3
         );
@@ -854,21 +1031,31 @@ async function recognize() {
     } catch (error) {
 
         console.error(
-            "CNN recognition failed:",
+            "Recognition failed:",
             error
         );
 
-        resultElement.textContent =
-            "Recognition error: " +
-            error.message;
+        if (inputVersion !== currentVersion) {
+
+            resultElement.textContent =
+                "Input changed. Please recognize again.";
+
+        } else {
+
+            resultElement.textContent =
+                "Recognition error: " +
+                error.message;
+
+        }
 
     } finally {
 
         isRecognizing = false;
+
         recognizeButton.disabled = false;
+        photoRecognizeButton.disabled = false;
 
     }
-
 }
 
 </script>
