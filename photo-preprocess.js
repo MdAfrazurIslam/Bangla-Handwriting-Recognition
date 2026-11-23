@@ -1,16 +1,24 @@
 
 /*
  Bengali Handwriting Recognition
- Photo Preprocessing
+ Improved Photo Preprocessing
 
- Input: Photograph containing one dark
-        handwritten character on light paper.
+ Input:
+ One dark handwritten Bengali character
+ on light-colored paper.
 
- Output: 64x64 grayscale pixels
-         White character on black background.
+ Output:
+ 64x64 grayscale image
+ White handwriting on black background.
 */
 
 window.BanglaPhoto = (() => {
+
+    const SIZE = 64;
+
+    function clamp(value) {
+        return Math.max(0, Math.min(1, value));
+    }
 
     function process(image) {
 
@@ -24,7 +32,7 @@ window.BanglaPhoto = (() => {
             throw new Error("Image is not loaded.");
         }
 
-        // STEP 1: Resize large photographs
+        // STEP 1: Resize photograph
 
         const maxSide = 800;
 
@@ -46,19 +54,21 @@ window.BanglaPhoto = (() => {
             Math.round(originalHeight * scale)
         );
 
-        const sourceCanvas =
+        const canvas =
             document.createElement("canvas");
 
-        sourceCanvas.width = width;
-        sourceCanvas.height = height;
+        canvas.width = width;
+        canvas.height = height;
 
-        const ctx =
-            sourceCanvas.getContext("2d", {
-                willReadFrequently: true
-            });
+        const ctx = canvas.getContext(
+            "2d",
+            { willReadFrequently: true }
+        );
 
         ctx.fillStyle = "white";
         ctx.fillRect(0, 0, width, height);
+
+        ctx.imageSmoothingEnabled = true;
 
         ctx.drawImage(
             image,
@@ -66,14 +76,14 @@ window.BanglaPhoto = (() => {
             width, height
         );
 
-        const rgba = ctx.getImageData(
-            0, 0,
-            width, height
-        ).data;
+        const imageData = ctx.getImageData(
+            0, 0, width, height
+        );
 
+        const rgba = imageData.data;
         const count = width * height;
 
-        // STEP 2: Convert to grayscale
+        // STEP 2: Convert image to grayscale
 
         const gray = new Float32Array(count);
 
@@ -87,7 +97,8 @@ window.BanglaPhoto = (() => {
                 0.114 * rgba[p + 2];
         }
 
-        // STEP 3: Calculate local brightness
+        // STEP 3: Estimate local background
+        // using an integral image
 
         const stride = width + 1;
 
@@ -112,14 +123,19 @@ window.BanglaPhoto = (() => {
             }
         }
 
-        // STEP 4: Detect dark handwritten strokes
+        // STEP 4: Preserve dark handwriting
+        // while reducing background shadows
 
-        const mask = new Uint8Array(count);
+        const strength =
+            new Float32Array(count);
+
+        const strong =
+            new Uint8Array(count);
 
         const radius = Math.max(
-            10,
+            12,
             Math.round(
-                Math.min(width, height) * 0.035
+                Math.min(width, height) * 0.06
             )
         );
 
@@ -158,194 +174,232 @@ window.BanglaPhoto = (() => {
                     (x2 - x1 + 1) *
                     (y2 - y1 + 1);
 
-                const localMean = sum / area;
+                const background = sum / area;
 
                 const i = y * width + x;
 
-                if (
-                    localMean - gray[i] > 20 &&
-                    gray[i] < 235
-                ) {
-                    mask[i] = 1;
+                const localInk = clamp(
+                    (background - gray[i] - 4) / 75
+                );
+
+                const darkInk = clamp(
+                    (205 - gray[i]) / 120
+                ) * 0.5;
+
+                let ink = Math.max(
+                    localInk,
+                    darkInk
+                );
+
+                if (gray[i] > 245) {
+                    ink = 0;
+                }
+
+                strength[i] = ink;
+
+                // Strong pixels locate the handwriting.
+                // Weak pixels are retained later for
+                // smooth, natural-looking strokes.
+
+                if (ink > 0.24) {
+                    strong[i] = 1;
                 }
             }
         }
 
-        // STEP 5: Find connected stroke regions
+        // STEP 5: Remove isolated noise.
+        // Keep all significant strokes, including
+        // disconnected parts of Bengali characters.
 
-        const regionIds = new Int32Array(count);
-        const queue = new Int32Array(count);
-        const regions = [];
+        const supported =
+            new Uint8Array(count);
 
-        let regionNumber = 0;
+        const columns =
+            new Int32Array(width);
 
-        for (let start = 0; start < count; start++) {
+        const rows =
+            new Int32Array(height);
 
-            if (
-                mask[start] === 0 ||
-                regionIds[start] !== 0
+        let totalStrong = 0;
+
+        const borderX = Math.floor(width * 0.02);
+        const borderY = Math.floor(height * 0.02);
+
+        for (
+            let y = borderY;
+            y < height - borderY;
+            y++
+        ) {
+
+            for (
+                let x = borderX;
+                x < width - borderX;
+                x++
             ) {
-                continue;
-            }
 
-            regionNumber++;
+                const i = y * width + x;
 
-            let head = 0;
-            let tail = 1;
+                if (!strong[i]) continue;
 
-            queue[0] = start;
-            regionIds[start] = regionNumber;
-
-            let minX = width;
-            let minY = height;
-            let maxX = 0;
-            let maxY = 0;
-            let touchesBorder = false;
-
-            while (head < tail) {
-
-                const current = queue[head++];
-
-                const x = current % width;
-                const y = Math.floor(current / width);
-
-                minX = Math.min(minX, x);
-                minY = Math.min(minY, y);
-                maxX = Math.max(maxX, x);
-                maxY = Math.max(maxY, y);
-
-                if (
-                    x < 3 || y < 3 ||
-                    x >= width - 3 ||
-                    y >= height - 3
-                ) {
-                    touchesBorder = true;
-                }
-
-                // Eight-neighbour connected components
+                let neighbors = 0;
 
                 for (
-                    let ny = Math.max(0, y - 1);
-                    ny <= Math.min(height - 1, y + 1);
-                    ny++
+                    let dy = -1;
+                    dy <= 1;
+                    dy++
                 ) {
 
                     for (
-                        let nx = Math.max(0, x - 1);
-                        nx <= Math.min(width - 1, x + 1);
-                        nx++
+                        let dx = -1;
+                        dx <= 1;
+                        dx++
                     ) {
 
-                        const next = ny * width + nx;
+                        const nx = x + dx;
+                        const ny = y + dy;
 
                         if (
-                            mask[next] === 1 &&
-                            regionIds[next] === 0
+                            nx >= 0 &&
+                            nx < width &&
+                            ny >= 0 &&
+                            ny < height
                         ) {
-                            regionIds[next] = regionNumber;
-                            queue[tail++] = next;
+
+                            if (
+                                strong[ny * width + nx]
+                            ) {
+                                neighbors++;
+                            }
                         }
                     }
                 }
+
+                if (neighbors >= 2) {
+
+                    supported[i] = 1;
+
+                    columns[x]++;
+                    rows[y]++;
+
+                    totalStrong++;
+                }
+            }
+        }
+
+        if (totalStrong < 15) {
+
+            throw new Error(
+                "No clear handwriting detected. " +
+                "Please use a darker pen or " +
+                "a clearer photograph."
+            );
+        }
+
+        if (totalStrong > count * 0.35) {
+
+            throw new Error(
+                "Too much dark background detected. " +
+                "Please crop the image around " +
+                "one character."
+            );
+        }
+
+        // STEP 6: Find the character bounds.
+        // Trim a very small amount of outlying
+        // noise without cutting off the letters.
+
+        function findLowerBound(histogram, trim) {
+
+            let seen = 0;
+
+            for (
+                let i = 0;
+                i < histogram.length;
+                i++
+            ) {
+
+                seen += histogram[i];
+
+                if (seen > trim) {
+                    return i;
+                }
             }
 
-            regions.push({
-                id: regionNumber,
-                size: tail,
-                minX,
-                minY,
-                maxX,
-                maxY,
-                touchesBorder,
-                centerX: (minX + maxX) / 2,
-                centerY: (minY + maxY) / 2
-            });
+            return 0;
         }
 
-        const minimumSize = Math.max(
-            8,
-            Math.floor(count * 0.000015)
+        function findUpperBound(histogram, trim) {
+
+            let seen = 0;
+
+            for (
+                let i = histogram.length - 1;
+                i >= 0;
+                i--
+            ) {
+
+                seen += histogram[i];
+
+                if (seen > trim) {
+                    return i;
+                }
+            }
+
+            return histogram.length - 1;
+        }
+
+        const trim =
+            Math.floor(totalStrong * 0.003);
+
+        let minX = findLowerBound(
+            columns, trim
         );
 
-        const candidates = regions.filter(
-            r => r.size >= minimumSize
+        let maxX = findUpperBound(
+            columns, trim
         );
 
-        if (candidates.length === 0) {
+        let minY = findLowerBound(
+            rows, trim
+        );
+
+        let maxY = findUpperBound(
+            rows, trim
+        );
+
+        if (maxX <= minX || maxY <= minY) {
+
             throw new Error(
-                "No clear handwritten character detected."
+                "Could not identify character bounds."
             );
         }
 
-        // STEP 6: Choose the main character region
+        // Add a small margin around the strokes
 
-        const score = (r) => {
-
-            const dx =
-                (r.centerX - width / 2) / width;
-
-            const dy =
-                (r.centerY - height / 2) / height;
-
-            const borderPenalty =
-                r.touchesBorder ? 0.05 : 1;
-
-            return (
-                r.size * borderPenalty /
-                (1 + 4 * (dx * dx + dy * dy))
-            );
-        };
-
-        candidates.sort(
-            (a, b) => score(b) - score(a)
+        const padding = Math.max(
+            2,
+            Math.round(
+                Math.max(
+                    maxX - minX,
+                    maxY - minY
+                ) * 0.035
+            )
         );
 
-        const main = candidates[0];
+        minX = Math.max(0, minX - padding);
+        minY = Math.max(0, minY - padding);
 
-        // Include nearby dots or marks
-
-        const mainSize = Math.max(
-            main.maxX - main.minX + 1,
-            main.maxY - main.minY + 1
+        maxX = Math.min(
+            width - 1,
+            maxX + padding
         );
 
-        const margin = Math.max(
-            12,
-            mainSize * 0.4
+        maxY = Math.min(
+            height - 1,
+            maxY + padding
         );
 
-        const selected = candidates.filter(r => {
-
-            if (r.id === main.id) return true;
-
-            if (r.touchesBorder) return false;
-
-            return (
-                r.centerX >= main.minX - margin &&
-                r.centerX <= main.maxX + margin &&
-                r.centerY >= main.minY - margin &&
-                r.centerY <= main.maxY + margin
-            );
-        });
-
-        const selectedIds = new Set(
-            selected.map(r => r.id)
-        );
-
-        let minX = width;
-        let minY = height;
-        let maxX = 0;
-        let maxY = 0;
-
-        for (const r of selected) {
-
-            minX = Math.min(minX, r.minX);
-            minY = Math.min(minY, r.minY);
-            maxX = Math.max(maxX, r.maxX);
-            maxY = Math.max(maxY, r.maxY);
-        }
-
-        // STEP 7: Create cleaned character mask
+        // STEP 7: Create a smooth grayscale mask
 
         const cleanCanvas =
             document.createElement("canvas");
@@ -359,18 +413,66 @@ window.BanglaPhoto = (() => {
         const cleanData =
             cleanCtx.createImageData(width, height);
 
-        for (let i = 0; i < count; i++) {
+        for (let y = 0; y < height; y++) {
 
-            const isStroke =
-                selectedIds.has(regionIds[i]);
+            for (let x = 0; x < width; x++) {
 
-            const value = isStroke ? 255 : 0;
-            const p = i * 4;
+                const i = y * width + x;
 
-            cleanData.data[p] = value;
-            cleanData.data[p + 1] = value;
-            cleanData.data[p + 2] = value;
-            cleanData.data[p + 3] = 255;
+                let keep = supported[i] === 1;
+
+                // Preserve softer edge pixels near
+                // the detected handwriting strokes.
+
+                if (
+                    !keep &&
+                    strength[i] > 0.12
+                ) {
+
+                    for (
+                        let dy = -1;
+                        dy <= 1 && !keep;
+                        dy++
+                    ) {
+
+                        for (
+                            let dx = -1;
+                            dx <= 1;
+                            dx++
+                        ) {
+
+                            const nx = x + dx;
+                            const ny = y + dy;
+
+                            if (
+                                nx >= 0 &&
+                                nx < width &&
+                                ny >= 0 &&
+                                ny < height &&
+                                supported[
+                                    ny * width + nx
+                                ]
+                            ) {
+                                keep = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                const value = keep
+                    ? Math.round(
+                        clamp(strength[i]) * 255
+                    )
+                    : 0;
+
+                const p = i * 4;
+
+                cleanData.data[p] = value;
+                cleanData.data[p + 1] = value;
+                cleanData.data[p + 2] = value;
+                cleanData.data[p + 3] = 255;
+            }
         }
 
         cleanCtx.putImageData(
@@ -379,16 +481,13 @@ window.BanglaPhoto = (() => {
             0
         );
 
-        // STEP 8: Crop, resize and center to 64x64
-
-        const cropWidth = maxX - minX + 1;
-        const cropHeight = maxY - minY + 1;
+        // STEP 8: Resize and center to 64x64
 
         const outputCanvas =
             document.createElement("canvas");
 
-        outputCanvas.width = 64;
-        outputCanvas.height = 64;
+        outputCanvas.width = SIZE;
+        outputCanvas.height = SIZE;
 
         const outputCtx =
             outputCanvas.getContext("2d");
@@ -396,21 +495,25 @@ window.BanglaPhoto = (() => {
         outputCtx.fillStyle = "black";
 
         outputCtx.fillRect(
-            0,
-            0,
-            64,
-            64
+            0, 0, SIZE, SIZE
         );
+
+        const cropWidth = maxX - minX + 1;
+        const cropHeight = maxY - minY + 1;
 
         const resizeScale = Math.min(
             52 / cropWidth,
             52 / cropHeight
         );
 
-        const newWidth = cropWidth * resizeScale;
-        const newHeight = cropHeight * resizeScale;
+        const newWidth =
+            cropWidth * resizeScale;
+
+        const newHeight =
+            cropHeight * resizeScale;
 
         outputCtx.imageSmoothingEnabled = true;
+        outputCtx.imageSmoothingQuality = "high";
 
         outputCtx.drawImage(
             cleanCanvas,
@@ -418,24 +521,23 @@ window.BanglaPhoto = (() => {
             minY,
             cropWidth,
             cropHeight,
-            (64 - newWidth) / 2,
-            (64 - newHeight) / 2,
+            (SIZE - newWidth) / 2,
+            (SIZE - newHeight) / 2,
             newWidth,
             newHeight
         );
 
-        // STEP 9: Convert to CNN pixel values
+        // STEP 9: Prepare normalized CNN input
 
-        const outputData = outputCtx.getImageData(
-            0,
-            0,
-            64,
-            64
-        ).data;
+        const outputData =
+            outputCtx.getImageData(
+                0, 0, SIZE, SIZE
+            ).data;
 
-        const pixels = new Float32Array(4096);
+        const pixels =
+            new Float32Array(SIZE * SIZE);
 
-        for (let i = 0; i < 4096; i++) {
+        for (let i = 0; i < pixels.length; i++) {
 
             pixels[i] =
                 outputData[i * 4] / 255;
@@ -443,7 +545,9 @@ window.BanglaPhoto = (() => {
 
         return {
             pixels: pixels,
-            preview: outputCanvas.toDataURL("image/png")
+            preview: outputCanvas.toDataURL(
+                "image/png"
+            )
         };
     }
 
